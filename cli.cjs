@@ -34,28 +34,62 @@ if (!allowedTypes.includes(documentType.toLowerCase())) {
 }
 
 (async function main() {
-  try {
-      const xmlBuffer = await readFile(inputXmlPath);
-      const xmlFile = new File([xmlBuffer], inputXmlPath.split(/[/\\]/).pop() || 'input.xml', { type: 'application/xml' });
+    try {
+        const xmlBuffer = await readFile(inputXmlPath);
+        const xmlFile = new File([xmlBuffer], inputXmlPath.split(/[/\\]/).pop() || 'input.xml', { type: 'application/xml' });
 
-      const docType = documentType.toLowerCase();
-      const isInvoice = docType === 'invoice' || docType === 'faktura';
-      
-      const pdfBlob = isInvoice
-          ? await generateInvoice(xmlFile, additionalDataJson ? JSON.parse(additionalDataJson) : {}, 'blob')
-          : await generatePDFUPO(xmlFile);
+        const docType = documentType.toLowerCase();
+        const isInvoice = docType === 'invoice' || docType === 'faktura';
 
-      const buffer = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(Buffer.from(reader.result));
-          reader.onerror = reject;
-          reader.readAsArrayBuffer(pdfBlob);
-      });
+        let additionalData = additionalDataJson ? JSON.parse(additionalDataJson) : {};
 
-      await writeFile(outputPdfPath, buffer);
-      console.log(`PDF wygenerowano: ${outputPdfPath}`);
-  } catch (error) {
-      console.error('Błąd:', error.message);
-      process.exit(1);
-  }
+        // Jeśli nie podano kodu QR, spróbuj automatycznie go wygenerować na podstawie nrKSeF z XML
+        if (isInvoice && (!additionalData.qrCode || !additionalData.nrKSeF)) {
+            // Parsuj XML, aby wyciągnąć NIP i P_1
+            const xmlString = xmlBuffer.toString();
+            const nipMatch = xmlString.match(/<NIP>([^<]+)<\/NIP>/i);
+            const dataMatch = xmlString.match(/<P_1>([^<]+)<\/P_1>/i);
+            // Ustaw nrKSeF na podstawie nazwy pliku (bez rozszerzenia)
+            if (!additionalData.nrKSeF) {
+                const fileName = inputXmlPath.split(/[\/]/).pop() || '';
+                additionalData.nrKSeF = fileName.replace(/\.xml$/i, '');
+            }
+            const nip = nipMatch ? nipMatch[1] : '';
+            let data = dataMatch ? dataMatch[1] : '';
+            // Zamień format daty z RRRR-MM-DD na DD-MM-RRRR jeśli pasuje
+            if (/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+                const [yyyy, mm, dd] = data.split('-');
+                data = `${dd}-${mm}-${yyyy}`;
+            }
+            // Oblicz hash jako SHA256 z treści pliku XML
+            if (nip && data) {
+                const crypto = require('crypto');
+                const sha256Buffer = crypto.createHash('sha256').update(xmlString).digest();
+                // Base64URL encoding
+                let base64url = sha256Buffer.toString('base64')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+                const hash = base64url;
+                additionalData.qrCode = additionalData.qrCode || `https://qr.ksef.mf.gov.pl/invoice/${nip}/${data}/${hash}`;
+            }
+        }
+
+        const pdfBlob = isInvoice
+            ? await generateInvoice(xmlFile, additionalData, 'blob')
+            : await generatePDFUPO(xmlFile);
+
+        const buffer = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(Buffer.from(reader.result));
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(pdfBlob);
+        });
+
+        await writeFile(outputPdfPath, buffer);
+        console.log(`PDF wygenerowano: ${outputPdfPath}`);
+    } catch (error) {
+        console.error('Błąd:', error.message);
+        process.exit(1);
+    }
 })();
