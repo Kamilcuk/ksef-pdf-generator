@@ -10,6 +10,7 @@ global.document = dom.window.document;
 global.File = dom.window.File;
 global.Blob = dom.window.Blob;
 global.FileReader = dom.window.FileReader;
+global.navigator = {};
 
 const pdfMake = require('pdfmake/build/pdfmake.js');
 const vfs = require('pdfmake/build/vfs_fonts.js');
