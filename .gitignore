@@ -16,3 +16,4 @@ out
 .vscode
 *.swp
 bin/
+test-output/

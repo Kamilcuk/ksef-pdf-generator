@@ -92,8 +92,10 @@ if (!allowedTypes.includes(documentType.toLowerCase())) {
 
       await writeFile(outputPdfPath, buffer);
       console.log(`PDF wygenerowano: ${outputPdfPath}`);
-  } catch (error) {
-      console.error('Błąd:', error.message);
-      process.exit(1);
-  }
+} catch (error) {
+        console.error('Błąd:', error);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        process.exit(1);
+    }
 })();
